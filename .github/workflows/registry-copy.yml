@@ -1,0 +1,37 @@
+name: Registry Copy to GHCR (multi-arch)
+
+on:
+  workflow_dispatch:
+    inputs:
+      docker_images:
+        description: '请填写docker镜像名称 多个用英文逗号分开'
+        required: true
+        default: 'alpine:latest'
+
+env:
+  TARGET_REGISTRY: ghcr.io
+  TARGET_OWNER: flashtd1
+
+jobs:
+  copy_to_ghcr:
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+
+    steps:
+      - name: Install skopeo
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq skopeo
+
+      - name: Copy images to ghcr.io (preserve multi-arch)
+        run: |
+          images="${{ github.event.inputs.docker_images }}"
+          IFS=',' read -r -a image_array <<< "$images"
+          for image in "${image_array[@]}"; do
+            image="$(echo "$image" | xargs)"        # 去首尾空格
+            dest="${{ env.TARGET_REGISTRY }}/${{ env.TARGET_OWNER }}/${image,,}"   # ghcr 路径必须小写
+            echo "::group::Copy ${image} -> ${dest}"
+            skopeo copy --multi-arch all --retry-times 3 \
+              --dest-creds "${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}" \
+              "docker://${image}" "docker://${dest}"
+            echo "::endgroup::"
+          done
